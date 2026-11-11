@@ -220,6 +220,12 @@ EndpointCall = Callable[[GarminPersonalApiClient], Any]
             id="wellness-activity-summaries",
         ),
         pytest.param(
+            lambda c: c.get_activity_types(),
+            "/activity-service/activity/activityTypes/simple",
+            None,
+            id="activity-types",
+        ),
+        pytest.param(
             lambda c: c.search_activities(),
             "/activitylist-service/activities/search/activities",
             {"start": 0, "limit": 20},
@@ -263,6 +269,18 @@ def test_endpoint_wrappers_send_the_expected_request(
     assert method == "GET"
     assert url == f"{DEFAULT_BASE_URL}{path}"
     assert kwargs["params"] == params
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [[], [{"key": "running"}, {"key": "trail_running", "parent": "running"}]],
+)
+def test_activity_types_preserve_response(payload: list[dict[str, str]]) -> None:
+    session = StubSession(make_response(payload))
+    client = GarminPersonalApiClient("token", session=session)
+
+    assert client.get_activity_types() == payload
+    assert len(session.calls) == 1
 
 
 def test_single_day_summaries_preserve_collection_response() -> None:

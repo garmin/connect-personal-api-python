@@ -228,6 +228,10 @@ class GarminPersonalApiClient:
             f"/wellnessactivity-service/activity/summary/range/{_iso(start_date)}/{_iso(end_date)}"
         )
 
+    def get_activity_types(self) -> JsonValue:
+        """Return activity types with a key and optional parent."""
+        return self.get("/activity-service/activity/activityTypes/simple")
+
     def search_activities(
         self,
         *,
@@ -237,7 +241,10 @@ class GarminPersonalApiClient:
         end_date: str | date | None = None,
         activity_type: str | None = None,
     ) -> JsonValue:
-        """Return summarized activities matching the supplied search filters."""
+        """Return summarized activities matching the supplied search filters.
+
+        Use get_activity_types() to discover available activity_type keys. Only parent activity types are valid for filtering.
+        """
         params: dict[str, str | int] = {"start": start, "limit": limit}
         if start_date is not None:
             params["startDate"] = _iso(start_date)
