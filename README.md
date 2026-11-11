@@ -321,6 +321,7 @@ see [Call an endpoint without a wrapper](#call-an-endpoint-without-a-wrapper).
 | `get_daily_spo2(calendar_date)` | `spo2` | `GET /wellness-service/wellness/daily/spo2acclimation/{calendar_date}` |
 | `get_wellness_activity_summaries(start_date, end_date)` | `wellness-activity-summaries` | `GET /wellnessactivity-service/activity/summary/range/{start_date}/{end_date}` |
 | `search_activities(*, start=0, limit=20, start_date=None, end_date=None, activity_type=None)` | `activities` | `GET /activitylist-service/activities/search/activities?start={start}&limit={limit}[&startDate={start_date}&endDate={end_date}&activityType={activity_type}]` |
+| `get_activity_types()` | `activity-types` | `GET /activity-service/activity/activityTypes/simple` |
 | `get_activity(activity_id)` | `activity` | `GET /activity-service/activity/{activity_id}` |
 | `get_activity_workouts(activity_id)` | `activity-workouts` | `GET /activity-service/activity/{activity_id}/workouts` |
 | `download_activity(activity_id)` | `activity-download` | `GET /download-service/files/activity/{activity_id}` (ZIP bytes) |
