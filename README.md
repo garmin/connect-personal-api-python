@@ -167,6 +167,7 @@ gc-personal profile-settings
 gc-personal sleep --date 2026-08-24
 gc-personal steps --start-date 2026-08-20 --end-date 2026-08-24
 gc-personal activities --start 0 --limit 20 --start-date 2026-08-01
+gc-personal activity-types
 gc-personal activity 123456789
 gc-personal activity-workouts 123456789
 gc-personal activity-download 123456789
@@ -269,6 +270,23 @@ managers or closed explicitly.
 Request activity is logged at `INFO` to the `garmin_personal_api` logger.
 Configure Python logging to see it.
 
+### Discovering activity types
+
+`get_activity_types()` returns the available activity types as a JSON list.
+Each entry has a `key` and an optional `parent`; entries without a parent omit
+that field.
+
+```python
+with GarminPersonalApiClient(token.access_token) as client:
+    activity_types = client.get_activity_types()
+    activities = client.search_activities(activity_type="running")
+```
+
+Use a returned `key` as `activity_type`, or as the CLI's `--activity-type`
+option. Run `gc-personal activity-types` or choose **Activity Types** in the
+interactive menu to discover these keys. Searches don't automatically fetch
+or validate against the list.
+
 ### Downloading activity files
 
 `download_activity()` returns ZIP bytes without writing or extracting files:
@@ -321,6 +339,7 @@ see [Call an endpoint without a wrapper](#call-an-endpoint-without-a-wrapper).
 | `get_daily_spo2(calendar_date)` | `spo2` | `GET /wellness-service/wellness/daily/spo2acclimation/{calendar_date}` |
 | `get_wellness_activity_summaries(start_date, end_date)` | `wellness-activity-summaries` | `GET /wellnessactivity-service/activity/summary/range/{start_date}/{end_date}` |
 | `search_activities(*, start=0, limit=20, start_date=None, end_date=None, activity_type=None)` | `activities` | `GET /activitylist-service/activities/search/activities?start={start}&limit={limit}[&startDate={start_date}&endDate={end_date}&activityType={activity_type}]` |
+| `get_activity_types()` | `activity-types` | `GET /activity-service/activity/activityTypes/simple` |
 | `get_activity(activity_id)` | `activity` | `GET /activity-service/activity/{activity_id}` |
 | `get_activity_workouts(activity_id)` | `activity-workouts` | `GET /activity-service/activity/{activity_id}/workouts` |
 | `download_activity(activity_id)` | `activity-download` | `GET /download-service/files/activity/{activity_id}` (ZIP bytes) |

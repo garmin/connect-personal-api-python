@@ -82,6 +82,7 @@ def test_interactive_menu_titles_and_order() -> None:
         ("Fitness Age", "fitness-age"),
         ("Daily SpO2", "spo2"),
         ("Wellness Activity Summaries", "wellness-activity-summaries"),
+        ("Activity Types", "activity-types"),
         ("Reload Bearer Token", "refresh-token"),
     ]
     assert (
@@ -417,6 +418,7 @@ def test_shared_options_are_parsed_before_the_command(
     ("argv", "path", "params"),
     [
         (["profile-settings"], "/userprofile-service/userprofile/settings", None),
+        (["activity-types"], "/activity-service/activity/activityTypes/simple", None),
         (
             ["effective-weight-goals"],
             f"/goal-service/goal/user/effective/weightgoal/{TODAY}/{TODAY}",
@@ -516,6 +518,34 @@ def test_invalid_command_arguments_are_rejected(argv: list[str]) -> None:
         cli.build_parser().parse_args(argv)
 
     assert raised.value.code == 2
+
+
+def test_activity_types_interactive_command_needs_no_input() -> None:
+    payload = [{"key": "running"}, {"key": "trail_running", "parent": "running"}]
+    session = StubSession(make_response(payload))
+    output = StringIO()
+    error_output = StringIO()
+    answers = iter(["activity-types", "q"])
+
+    assert (
+        cli.run_interactive(
+            GarminPersonalApiClient("token", session=session),
+            input_func=lambda prompt: next(answers),
+            output=output,
+            error_output=error_output,
+            color=False,
+        )
+        == 0
+    )
+
+    assert json.dumps(payload, indent=2) in output.getvalue()
+    assert error_output.getvalue() == ""
+    [(method, url, kwargs)] = session.calls
+    assert (method, url, kwargs["params"]) == (
+        "GET",
+        f"{DEFAULT_BASE_URL}/activity-service/activity/activityTypes/simple",
+        None,
+    )
 
 
 def test_activity_commands_are_excluded_from_the_interactive_menu() -> None:

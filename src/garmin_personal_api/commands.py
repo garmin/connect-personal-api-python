@@ -105,6 +105,7 @@ COMMANDS = (
         Client.get_wellness_activity_summaries,
         "date_range",
     ),
+    CommandSpec("activity-types", "Activity Types", Client.get_activity_types, "none"),
     CommandSpec("activity", "Activity Details", Client.get_activity, "activity"),
     CommandSpec("activity-workouts", "Activity Workouts", Client.get_activity_workouts, "activity"),
     CommandSpec(
