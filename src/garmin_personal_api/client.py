@@ -243,7 +243,8 @@ class GarminPersonalApiClient:
     ) -> JsonValue:
         """Return summarized activities matching the supplied search filters.
 
-        Use get_activity_types() to discover available activity_type keys. Only parent activity types are valid for filtering.
+        Use get_activity_types() to discover available activity_type keys. 
+        Only parent activity types are valid for filtering.
         """
         params: dict[str, str | int] = {"start": start, "limit": limit}
         if start_date is not None:

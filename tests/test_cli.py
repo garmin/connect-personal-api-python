@@ -61,6 +61,7 @@ def test_interactive_menu_titles_and_order() -> None:
     from garmin_personal_api.interactive import _INTERACTIVE_MENU_ITEMS
 
     expected = [
+        ("Activity Types", "activity-types"),
         ("Activities", "activities"),
         ("Daily Stress", "stress"),
         ("Daily Steps", "steps"),
@@ -83,7 +84,6 @@ def test_interactive_menu_titles_and_order() -> None:
         ("Fitness Age", "fitness-age"),
         ("Daily SpO2", "spo2"),
         ("Wellness Activity Summaries", "wellness-activity-summaries"),
-        ("Activity Types", "activity-types"),
         ("Reload Bearer Token", "refresh-token"),
     ]
     assert (
