@@ -180,7 +180,7 @@ def _add_command_arguments(
         parser.add_argument(
             "--activity-type",
             metavar="TYPE",
-            help="Optional activity type filter, such as running or hiking.",
+            help="Optional activity type filter. Available types can be discovered using the 'activity-types' command. Only parent activity types are valid.",
         )
     elif spec.input_kind == "activity":
         parser.add_argument(

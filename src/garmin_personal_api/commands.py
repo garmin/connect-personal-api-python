@@ -41,6 +41,7 @@ class CommandSpec:
 
 
 COMMANDS = (
+    CommandSpec("activity-types", "Activity Types", Client.get_activity_types, "none"),
     CommandSpec("activities", "Activities", Client.search_activities, "activities"),
     CommandSpec("stress", "Daily Stress", Client.get_daily_stress, "date_range"),
     CommandSpec("steps", "Daily Steps", Client.get_daily_steps, "date_range"),
@@ -105,7 +106,6 @@ COMMANDS = (
         Client.get_wellness_activity_summaries,
         "date_range",
     ),
-    CommandSpec("activity-types", "Activity Types", Client.get_activity_types, "none"),
     CommandSpec("activity", "Activity Details", Client.get_activity, "activity"),
     CommandSpec("activity-workouts", "Activity Workouts", Client.get_activity_workouts, "activity"),
     CommandSpec(

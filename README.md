@@ -167,7 +167,6 @@ gc-personal profile-settings
 gc-personal sleep --date 2026-08-24
 gc-personal steps --start-date 2026-08-20 --end-date 2026-08-24
 gc-personal activities --start 0 --limit 20 --start-date 2026-08-01
-gc-personal activity-types
 gc-personal activity 123456789
 gc-personal activity-workouts 123456789
 gc-personal activity-download 123456789
@@ -269,23 +268,6 @@ managers or closed explicitly.
 
 Request activity is logged at `INFO` to the `garmin_personal_api` logger.
 Configure Python logging to see it.
-
-### Discovering activity types
-
-`get_activity_types()` returns the available activity types as a JSON list.
-Each entry has a `key` and an optional `parent`; entries without a parent omit
-that field.
-
-```python
-with GarminPersonalApiClient(token.access_token) as client:
-    activity_types = client.get_activity_types()
-    activities = client.search_activities(activity_type="running")
-```
-
-Use a returned `key` as `activity_type`, or as the CLI's `--activity-type`
-option. Run `gc-personal activity-types` or choose **Activity Types** in the
-interactive menu to discover these keys. Searches don't automatically fetch
-or validate against the list.
 
 ### Downloading activity files
 

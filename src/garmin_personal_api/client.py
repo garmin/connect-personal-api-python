@@ -212,10 +212,7 @@ class GarminPersonalApiClient:
         )
 
     def get_activity_types(self) -> JsonValue:
-        """Return activity types with a key and optional parent, preserving the response.
-
-        Pass a returned key to search_activities() as activity_type.
-        """
+        """Return activity types with a key and optional parent."""
         return self.get("/activity-service/activity/activityTypes/simple")
 
     def search_activities(
@@ -229,7 +226,7 @@ class GarminPersonalApiClient:
     ) -> JsonValue:
         """Return summarized activities matching the supplied search filters.
 
-        Use get_activity_types() to discover available activity_type keys.
+        Use get_activity_types() to discover available activity_type keys. Only parent activity types are valid for filtering.
         """
         params: dict[str, str | int] = {"start": start, "limit": limit}
         if start_date is not None:
