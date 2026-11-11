@@ -200,6 +200,10 @@ and can force a new token to be obtained and cached from the menu.
 gc-personal
 ```
 
+The main menu groups data into **Activity Data**, **Health Data**, and
+**Women's Health Data**. Choose a category, then a data set.
+Command names such as `stress` also work as shortcuts.
+
 Select an activity in the activity browser to view its details or workouts,
 or choose **download activity file** to save its ZIP file. The menu
 prompts for a destination and confirms before replacing an existing file.
