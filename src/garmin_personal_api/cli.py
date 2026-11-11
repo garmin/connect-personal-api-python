@@ -158,7 +158,8 @@ def _add_command_arguments(
                 "--sport",
                 action="append",
                 metavar="SPORT",
-                help="Optional sport filter; repeat to include multiple sports. Available sport types are those found in the Garmin FIT SDK.",
+                help="Optional sport filter; repeat to include multiple sports. " \
+                "Available sport types are those found in the Garmin FIT SDK.",
             )
     elif spec.input_kind == "activities":
         parser.add_argument(
