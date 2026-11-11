@@ -314,6 +314,7 @@ see [Call an endpoint without a wrapper](#call-an-endpoint-without-a-wrapper).
 | `get_daily_heart_rate(calendar_date)` | `heart-rate` | `GET /wellness-service/wellness/dailyHeartRate?date={calendar_date}` |
 | `get_daily_hrv(calendar_date)` | `hrv` | `GET /hrv-service/hrv/{calendar_date}` |
 | `get_daily_hrv_summaries(start_date, end_date)` | `hrv-summaries` | `GET /hrv-service/hrv/daily/{start_date}/{end_date}` |
+| `get_daily_vo2_max(start_date, end_date, *, sport=None)` | `vo2-max` | `GET /metrics-service/metrics/maxmet/daily/{start_date}/{end_date}[?sport={sport}]` |
 | `get_heart_rate_zones()` | `heart-rate-zones` | `GET /biometric-service/heartRateZones/v2` |
 | `get_menstrual_cycle_summary(calendar_date)` | `menstrual-cycle-summary` | `GET /periodichealth-service/menstrualcycle/summary/{calendar_date}` |
 | `get_menstrual_cycle_day_view(calendar_date, today_date)` | `menstrual-cycle-day-view` | `GET /periodichealth-service/menstrualcycle/dayview/{calendar_date}?todayDate={today_date}` |

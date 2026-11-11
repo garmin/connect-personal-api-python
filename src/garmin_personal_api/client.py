@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 from urllib.parse import urlencode
@@ -29,7 +29,10 @@ from .constants import BASE_URL_ENV_VAR, DEFAULT_BASE_URL, DEFAULT_TIMEOUT_SECON
 from .errors import GarminPersonalApiError, HttpError
 
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
-QueryParams = Mapping[str, str | int | float | bool]
+QueryParams = Mapping[
+    str,
+    str | int | float | bool | Sequence[str | int | float | bool],
+]
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -167,6 +170,20 @@ class GarminPersonalApiClient:
         """Return daily heart rate variability (HRV) summaries for an inclusive date range."""
         return self.get(f"/hrv-service/hrv/daily/{_iso(start_date)}/{_iso(end_date)}")
 
+    def get_daily_vo2_max(
+        self,
+        start_date: str | date,
+        end_date: str | date,
+        *,
+        sport: Sequence[str] | None = None,
+    ) -> JsonValue:
+        """Return daily VO2 Max data for an inclusive date range, optionally filtered by sport."""
+        params = {"sport": sport} if sport else None
+        return self.get(
+            f"/metrics-service/metrics/maxmet/daily/{_iso(start_date)}/{_iso(end_date)}",
+            params=params,
+        )
+
     def get_heart_rate_zones(self) -> JsonValue:
         """Return the current user's heart rate zones."""
         return self.get("/biometric-service/heartRateZones/v2")
@@ -266,7 +283,7 @@ class GarminPersonalApiClient:
         accept: str = "application/json",
     ) -> requests.Response:
         url = f"{self.base_url}{path}"
-        _LOGGER.info("GET %s", f"{path}?{urlencode(params)}" if params else path)
+        _LOGGER.info("GET %s", f"{path}?{urlencode(params, doseq=True)}" if params else path)
         response = self._session.get(
             url,
             headers={**self._headers, "Accept": accept},

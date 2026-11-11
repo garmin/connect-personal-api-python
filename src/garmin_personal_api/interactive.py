@@ -224,6 +224,17 @@ def _run_interactive_command(
         )
         date_state.last_date = start_date
         date_state.last_end_date = end_date
+        if spec.command == "vo2-max":
+            requested_sports = input_func(
+                "Sport filters (comma-separated, leave blank for all): "
+            ).strip()
+            sports = [sport.strip() for sport in requested_sports.split(",") if sport.strip()]
+            return _run_interactive_operation(
+                lambda: method(start_date, end_date, sport=sports or None),
+                heading=f"{spec.label} | {start_date} to {end_date}",
+                output=output,
+                color=color,
+            )
         return _run_interactive_operation(
             lambda: method(start_date, end_date),
             heading=f"{spec.label} | {start_date} to {end_date}",

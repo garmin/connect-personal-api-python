@@ -76,6 +76,7 @@ def test_interactive_menu_titles_and_order() -> None:
         ("Daily Heart Rate", "heart-rate"),
         ("Daily HRV", "hrv"),
         ("Daily HRV Summaries", "hrv-summaries"),
+        ("Daily VO2 Max", "vo2-max"),
         ("Heart Rate Zones", "heart-rate-zones"),
         ("Menstrual Cycle Summary", "menstrual-cycle-summary"),
         ("Menstrual Cycle Day View", "menstrual-cycle-day-view"),
@@ -444,6 +445,26 @@ def test_shared_options_are_parsed_before_the_command(
             None,
         ),
         (
+            ["vo2-max"],
+            f"/metrics-service/metrics/maxmet/daily/{TODAY}/{TODAY}",
+            None,
+        ),
+        (
+            [
+                "vo2-max",
+                "--start-date",
+                "2026-08-20",
+                "--end-date",
+                "2026-08-24",
+                "--sport",
+                "RUNNING",
+                "--sport",
+                "CYCLING",
+            ],
+            "/metrics-service/metrics/maxmet/daily/2026-08-20/2026-08-24",
+            {"sport": ["RUNNING", "CYCLING"]},
+        ),
+        (
             ["wellness-activity-summaries"],
             f"/wellnessactivity-service/activity/summary/range/{TODAY}/{TODAY}",
             None,
@@ -534,6 +555,26 @@ def test_activity_commands_are_excluded_from_the_interactive_menu() -> None:
     assert "Activity Details" not in output.getvalue()
     assert "Activity Workouts" not in output.getvalue()
     assert error_output.getvalue().count("Invalid selection") == 2
+
+
+def test_interactive_vo2_max_accepts_sport_filters() -> None:
+    session = StubSession(make_response({"ok": True}))
+    output = StringIO()
+    answers = iter(["vo2-max", "2026-08-20", "2026-08-24", "RUNNING, CYCLING", "q"])
+
+    cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=StringIO(),
+        color=False,
+    )
+
+    [(method, url, kwargs)] = session.calls
+    assert method == "GET"
+    assert url.endswith("/metrics-service/metrics/maxmet/daily/2026-08-20/2026-08-24")
+    assert kwargs["params"] == {"sport": ["RUNNING", "CYCLING"]}
+    assert '"ok": true' in output.getvalue()
 
 
 def test_main_executes_a_command(
