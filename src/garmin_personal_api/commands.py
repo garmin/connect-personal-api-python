@@ -23,7 +23,9 @@ from typing import Literal
 from .client import GarminPersonalApiClient as Client
 from .client import JsonValue
 
-InputKind = Literal["date", "date_range", "date_with_today", "none", "activities", "activity"]
+InputKind = Literal[
+    "date", "date_range", "date_with_today", "none", "activities", "activity"
+]
 # Shared by the CLI subcommand and the interactive menu action; not a data command.
 TOKEN_REFRESH_COMMAND = "refresh-token"
 
@@ -84,6 +86,13 @@ COMMANDS = (
         Client.get_daily_hrv_summaries,
         "date_range",
         description="Get daily heart rate variability (HRV) summaries for an inclusive date range.",
+    ),
+    CommandSpec(
+        "vo2-max",
+        "Daily VO2 Max",
+        Client.get_daily_vo2_max,
+        "date_range",
+        description="Get daily VO2 Max data for an inclusive date range.",
     ),
     CommandSpec("heart-rate-zones", "Heart Rate Zones", Client.get_heart_rate_zones, "none"),
     CommandSpec(

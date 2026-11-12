@@ -38,13 +38,52 @@ _ACTIVITY_PAGE_SIZE = 10
 # Activity commands need an activity ID, so they are reached from the activity browser.
 _MENU_COMMANDS = tuple(spec for spec in COMMANDS if spec.input_kind != "activity")
 _MENU_COMMANDS_BY_NAME = {spec.command: spec for spec in _MENU_COMMANDS}
+_MENU_CATEGORIES = {
+    "activity-data": (
+        "Activity Data",
+        ("activity-types", "activities", "wellness-activity-summaries"),
+    ),
+    "health-data": (
+        "Health Data",
+        (
+            "stress",
+            "steps",
+            "hydration",
+            "effective-weight-goals",
+            "weight-measurements",
+            "food-logs",
+            "sleep",
+            "sleep-summaries",
+            "body-battery",
+            "daily-summaries",
+            "heart-rate",
+            "hrv",
+            "hrv-summaries",
+            "vo2-max",
+            "heart-rate-zones",
+            "fitness-age",
+            "spo2",
+        ),
+    ),
+    "womens-health-data": (
+        "Women's Health Data",
+        ("menstrual-cycle-summary", "menstrual-cycle-day-view"),
+    ),
+}
 _INTERACTIVE_MENU_ITEMS = tuple(
-    (number, spec.label, spec.command) for number, spec in enumerate(_MENU_COMMANDS, start=1)
+    (number, label, category)
+    for number, (category, (label, _)) in enumerate(_MENU_CATEGORIES.items(), start=1)
+)
+_INTERACTIVE_MENU_ITEMS += (
+    (
+        len(_INTERACTIVE_MENU_ITEMS) + 1,
+        _MENU_COMMANDS_BY_NAME["profile-settings"].label,
+        "profile-settings",
+    ),
 )
 _INTERACTIVE_MENU_ITEMS += (
     (len(_INTERACTIVE_MENU_ITEMS) + 1, "Reload Bearer Token", TOKEN_REFRESH_COMMAND),
 )
-_INTERACTIVE_MENU_ACTIONS = {str(number): command for number, _, command in _INTERACTIVE_MENU_ITEMS}
 
 
 @dataclass
@@ -99,22 +138,45 @@ def _run_interactive_session(
 ) -> int:
     today = date.today().isoformat()
     date_state = _InteractiveDateState(last_date=today, last_end_date=today)
+    category: str | None = None
 
     if show_header:
         print_heading("Garmin Personal API", output=actual_output, width=56, color=color)
 
     while True:
-        _print_interactive_menu(output=actual_output, color=color)
+        if category is None:
+            title = "Available data sets"
+            items = _INTERACTIVE_MENU_ITEMS
+        else:
+            title, commands = _MENU_CATEGORIES[category]
+            items = tuple(
+                (number, _MENU_COMMANDS_BY_NAME[command].label, command)
+                for number, command in enumerate(commands, start=1)
+            )
+        _print_interactive_menu(
+            title=title,
+            items=items,
+            show_back=category is not None,
+            output=actual_output,
+            color=color,
+        )
         try:
             choice = input_func("\nSelection: ").strip().lower()
             if choice in {"q", "quit", "exit"}:
                 print("\nGoodbye.", file=actual_output)
                 return 0
             if choice in {"b", "back"}:
-                print("Already at the main menu.", file=actual_error_output)
+                if category is None:
+                    print("Already at the main menu.", file=actual_error_output)
+                else:
+                    category = None
                 continue
 
-            command = _INTERACTIVE_MENU_ACTIONS.get(choice, choice)
+            actions = {str(number): command for number, _, command in items}
+            command = actions.get(choice, choice)
+            if command in _MENU_CATEGORIES:
+                category = command
+                continue
             if command == TOKEN_REFRESH_COMMAND:
                 if refresh_token is None:
                     print("Bearer token refresh is unavailable.", file=actual_error_output)
@@ -125,7 +187,8 @@ def _run_interactive_session(
             spec = _MENU_COMMANDS_BY_NAME.get(command)
             if spec is None:
                 print(
-                    f"Invalid selection. Choose 1 through {len(_INTERACTIVE_MENU_ITEMS)} or q.",
+                    f"Invalid selection. Choose 1 through {len(items)}"
+                    f"{', b, or' if category is not None else ' or'} q.",
                     file=actual_error_output,
                 )
                 continue
@@ -224,6 +287,17 @@ def _run_interactive_command(
         )
         date_state.last_date = start_date
         date_state.last_end_date = end_date
+        if spec.command == "vo2-max":
+            requested_sports = input_func(
+                "Sport filters (comma-separated, leave blank for all): "
+            ).strip()
+            sports = [sport.strip() for sport in requested_sports.split(",") if sport.strip()]
+            return _run_interactive_operation(
+                lambda: method(start_date, end_date, sport=sports or None),
+                heading=f"{spec.label} | {start_date} to {end_date}",
+                output=output,
+                color=color,
+            )
         return _run_interactive_operation(
             lambda: method(start_date, end_date),
             heading=f"{spec.label} | {start_date} to {end_date}",
@@ -414,14 +488,23 @@ def print_heading(
     console.print(_rich_text(separator, style="dim"))
 
 
-def _print_interactive_menu(*, output: TextIO, color: bool | None) -> None:
-    print_heading("Available data sets", output=output, width=56, color=color)
+def _print_interactive_menu(
+    *,
+    title: str,
+    items: tuple[tuple[int, str, str], ...],
+    show_back: bool,
+    output: TextIO,
+    color: bool | None,
+) -> None:
+    print_heading(title, output=output, width=56, color=color)
     from rich.table import Table
 
     table = Table(box=None, show_header=False, pad_edge=False, expand=False)
     table.add_column("Selection")
-    for number, label, _ in _INTERACTIVE_MENU_ITEMS:
+    for number, label, _ in items:
         table.add_row(f"{number:<2} {label}")
+    if show_back:
+        table.add_row("b   Back to main menu", style="dim")
     table.add_row("q   Quit", style="dim")
     _interactive_console(output=output, color=color).print(table)
 

@@ -58,7 +58,11 @@ def test_missing_interactive_dependency_shows_install_command(
 
 
 def test_interactive_menu_titles_and_order() -> None:
-    from garmin_personal_api.interactive import _INTERACTIVE_MENU_ITEMS
+    from garmin_personal_api.interactive import (
+        _INTERACTIVE_MENU_ITEMS,
+        _MENU_CATEGORIES,
+        _MENU_COMMANDS_BY_NAME,
+    )
 
     expected = [
         ("Activity Types", "activity-types"),
@@ -77,6 +81,7 @@ def test_interactive_menu_titles_and_order() -> None:
         ("Daily Heart Rate", "heart-rate"),
         ("Daily HRV", "hrv"),
         ("Daily HRV Summaries", "hrv-summaries"),
+        ("Daily VO2 Max", "vo2-max"),
         ("Heart Rate Zones", "heart-rate-zones"),
         ("Menstrual Cycle Summary", "menstrual-cycle-summary"),
         ("Menstrual Cycle Day View", "menstrual-cycle-day-view"),
@@ -86,9 +91,161 @@ def test_interactive_menu_titles_and_order() -> None:
         ("Reload Bearer Token", "refresh-token"),
     ]
     assert (
-        tuple((number, label, command) for number, (label, command) in enumerate(expected, start=1))
-        == _INTERACTIVE_MENU_ITEMS
+        (1, "Activity Data", "activity-data"),
+        (2, "Health Data", "health-data"),
+        (3, "Women's Health Data", "womens-health-data"),
+        (4, "User Profile Settings", "profile-settings"),
+        (5, *expected[-1]),
+    ) == _INTERACTIVE_MENU_ITEMS
+    expected_groups = (
+        ("Activity Data", [1, 2, 23]),
+        ("Health Data", [3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22]),
+        ("Women's Health Data", [19, 20]),
     )
+    for (title, commands), (expected_title, numbers) in zip(
+        _MENU_CATEGORIES.values(), expected_groups, strict=True
+    ):
+        assert title == expected_title
+        assert [(_MENU_COMMANDS_BY_NAME[name].label, name) for name in commands] == [
+            expected[number - 1] for number in numbers
+        ]
+    grouped_commands = [name for _, commands in _MENU_CATEGORIES.values() for name in commands]
+    grouped_commands += [
+        command for _, _, command in _INTERACTIVE_MENU_ITEMS if command in _MENU_COMMANDS_BY_NAME
+    ]
+    assert len(grouped_commands) == len(set(grouped_commands)) == len(_MENU_COMMANDS_BY_NAME)
+    assert set(grouped_commands) == set(_MENU_COMMANDS_BY_NAME)
+
+
+def test_interactive_root_shows_categories_and_profile_settings() -> None:
+    output = StringIO()
+    errors = StringIO()
+    answers = iter(["q"])
+    session = StubSession()
+
+    assert cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=errors,
+        color=False,
+    ) == 0
+
+    for label in ("Activity Data", "Health Data", "Women's Health Data", "User Profile Settings"):
+        assert label in output.getvalue()
+    assert "Daily Stress" not in output.getvalue()
+    assert "Activity Types" not in output.getvalue()
+    assert "User Profile Data" not in output.getvalue()
+    assert errors.getvalue() == ""
+    assert session.calls == []
+
+
+@pytest.mark.parametrize(
+    ("category", "option", "dates", "path"),
+    [
+        ("1", "1", [], "/activity-service/activity/activityTypes/simple"),
+        (
+            "1",
+            "3",
+            [TODAY, TODAY],
+            f"/wellnessactivity-service/activity/summary/range/{TODAY}/{TODAY}",
+        ),
+        ("2", "1", [TODAY, TODAY], f"/usersummary-service/stats/stress/daily/{TODAY}/{TODAY}"),
+        ("3", "1", [TODAY], f"/periodichealth-service/menstrualcycle/summary/{TODAY}"),
+    ],
+)
+def test_interactive_category_runs_command_and_stays_in_submenu(
+    category: str, option: str, dates: list[str], path: str
+) -> None:
+    session = StubSession(make_response({"ok": True}))
+    output = StringIO()
+    errors = StringIO()
+    answers = iter([category, option, *dates, "b", "q"])
+
+    assert cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=errors,
+        color=False,
+    ) == 0
+
+    assert len(session.calls) == 1
+    assert session.calls[0][1].endswith(path)
+    assert '"ok": true' in output.getvalue()
+    assert output.getvalue().count("Back to main menu") == 2
+    assert output.getvalue().count("Available data sets") == 2
+    assert errors.getvalue() == ""
+
+
+def test_interactive_activity_browser_returns_to_category() -> None:
+    session = StubSession(make_response([{"activityId": 123, "activityName": "Morning Run"}]))
+    output = StringIO()
+    errors = StringIO()
+    answers = iter(["1", "2", "1", "b", "b", "b", "q"])
+
+    assert cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=errors,
+        color=False,
+    ) == 0
+
+    assert len(session.calls) == 1
+    assert session.calls[0][1].endswith("/activitylist-service/activities/search/activities")
+    assert "Morning Run" in output.getvalue()
+    assert "activity details" in output.getvalue()
+    assert output.getvalue().count("Back to main menu") == 2
+    assert output.getvalue().count("Available data sets") == 2
+    assert errors.getvalue() == ""
+
+
+def test_interactive_submenu_recovers_from_invalid_input_cancellation_and_api_error() -> None:
+    session = StubSession(make_response({"error": "failed"}, status_code=500))
+    output = StringIO()
+    errors = StringIO()
+    answers = iter(["2", "99", "1", "b", "1", "", "", "q"])
+
+    assert cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=errors,
+        color=False,
+    ) == 0
+
+    assert len(session.calls) == 1
+    assert errors.getvalue().count("Invalid selection") == 1
+    assert "Choose 1 through 17, b, or q." in errors.getvalue()
+    assert "HTTP 500" in errors.getvalue()
+    assert output.getvalue().count("Back to main menu") == 4
+    assert output.getvalue().count("Available data sets") == 1
+
+
+def test_interactive_numeric_profile_settings_and_reload_remain_at_root() -> None:
+    output = StringIO()
+    errors = StringIO()
+    answers = iter(["4", "5", "q"])
+    refreshes: list[bool] = []
+    session = StubSession(make_response({"ok": True}))
+
+    assert cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=errors,
+        color=False,
+        refresh_token=lambda: refreshes.append(True),
+    ) == 0
+
+    assert refreshes == [True]
+    assert len(session.calls) == 1
+    assert session.calls[0][1].endswith("/userprofile-service/userprofile/settings")
+    assert '"ok": true' in output.getvalue()
+    assert "Back to main menu" not in output.getvalue()
+    assert errors.getvalue() == ""
+    assert output.getvalue().count("Available data sets") == 3
 
 
 @pytest.mark.parametrize(
@@ -446,6 +603,26 @@ def test_shared_options_are_parsed_before_the_command(
             None,
         ),
         (
+            ["vo2-max"],
+            f"/metrics-service/metrics/maxmet/daily/{TODAY}/{TODAY}",
+            None,
+        ),
+        (
+            [
+                "vo2-max",
+                "--start-date",
+                "2026-08-20",
+                "--end-date",
+                "2026-08-24",
+                "--sport",
+                "RUNNING",
+                "--sport",
+                "CYCLING",
+            ],
+            "/metrics-service/metrics/maxmet/daily/2026-08-20/2026-08-24",
+            {"sport": ["RUNNING", "CYCLING"]},
+        ),
+        (
             ["wellness-activity-summaries"],
             f"/wellnessactivity-service/activity/summary/range/{TODAY}/{TODAY}",
             None,
@@ -564,6 +741,26 @@ def test_activity_commands_are_excluded_from_the_interactive_menu() -> None:
     assert "Activity Details" not in output.getvalue()
     assert "Activity Workouts" not in output.getvalue()
     assert error_output.getvalue().count("Invalid selection") == 2
+
+
+def test_interactive_vo2_max_accepts_sport_filters() -> None:
+    session = StubSession(make_response({"ok": True}))
+    output = StringIO()
+    answers = iter(["vo2-max", "2026-08-20", "2026-08-24", "RUNNING, CYCLING", "q"])
+
+    cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=StringIO(),
+        color=False,
+    )
+
+    [(method, url, kwargs)] = session.calls
+    assert method == "GET"
+    assert url.endswith("/metrics-service/metrics/maxmet/daily/2026-08-20/2026-08-24")
+    assert kwargs["params"] == {"sport": ["RUNNING", "CYCLING"]}
+    assert '"ok": true' in output.getvalue()
 
 
 def test_main_executes_a_command(

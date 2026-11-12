@@ -200,6 +200,10 @@ and can force a new token to be obtained and cached from the menu.
 gc-personal
 ```
 
+The main menu groups data into **Activity Data**, **Health Data**, and
+**Women's Health Data**. Choose a category, then a data set.
+Command names such as `stress` also work as shortcuts.
+
 Select an activity in the activity browser to view its details or workouts,
 or choose **download activity file** to save its ZIP file. The menu
 prompts for a destination and confirms before replacing an existing file.
@@ -314,6 +318,7 @@ see [Call an endpoint without a wrapper](#call-an-endpoint-without-a-wrapper).
 | `get_daily_heart_rate(calendar_date)` | `heart-rate` | `GET /wellness-service/wellness/dailyHeartRate?date={calendar_date}` |
 | `get_daily_hrv(calendar_date)` | `hrv` | `GET /hrv-service/hrv/{calendar_date}` |
 | `get_daily_hrv_summaries(start_date, end_date)` | `hrv-summaries` | `GET /hrv-service/hrv/daily/{start_date}/{end_date}` |
+| `get_daily_vo2_max(start_date, end_date, *, sport=None)` | `vo2-max` | `GET /metrics-service/metrics/maxmet/daily/{start_date}/{end_date}[?sport={sport}]` |
 | `get_heart_rate_zones()` | `heart-rate-zones` | `GET /biometric-service/heartRateZones/v2` |
 | `get_menstrual_cycle_summary(calendar_date)` | `menstrual-cycle-summary` | `GET /periodichealth-service/menstrualcycle/summary/{calendar_date}` |
 | `get_menstrual_cycle_day_view(calendar_date, today_date)` | `menstrual-cycle-day-view` | `GET /periodichealth-service/menstrualcycle/dayview/{calendar_date}?todayDate={today_date}` |

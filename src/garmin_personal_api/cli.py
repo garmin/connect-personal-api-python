@@ -153,6 +153,14 @@ def _add_command_arguments(
                 default=1,
                 help="Number of min/max body battery pairs per day.",
             )
+        elif spec.command == "vo2-max":
+            parser.add_argument(
+                "--sport",
+                action="append",
+                metavar="SPORT",
+                help="Optional sport filter; repeat to include multiple sports. " \
+                "Available sport types are those found in the Garmin FIT SDK.",
+            )
     elif spec.input_kind == "activities":
         parser.add_argument(
             "--start",
@@ -293,6 +301,8 @@ def _execute_command(client: GarminPersonalApiClient, args: argparse.Namespace) 
     if spec.input_kind == "date_range":
         if spec.command == "body-battery":
             return method(args.start_date, args.end_date, chunks=args.chunks)
+        if spec.command == "vo2-max":
+            return method(args.start_date, args.end_date, sport=args.sport)
         return method(args.start_date, args.end_date)
     if spec.input_kind == "activities":
         return method(

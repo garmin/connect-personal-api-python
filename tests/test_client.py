@@ -172,6 +172,18 @@ EndpointCall = Callable[[GarminPersonalApiClient], Any]
             id="hrv-summaries",
         ),
         pytest.param(
+            lambda c: c.get_daily_vo2_max(START, END),
+            f"/metrics-service/metrics/maxmet/daily/{START}/{END}",
+            None,
+            id="vo2-max",
+        ),
+        pytest.param(
+            lambda c: c.get_daily_vo2_max(START, END, sport=["RUNNING", "CYCLING"]),
+            f"/metrics-service/metrics/maxmet/daily/{START}/{END}",
+            {"sport": ["RUNNING", "CYCLING"]},
+            id="vo2-max-sport-filter",
+        ),
+        pytest.param(
             lambda c: c.get_heart_rate_zones(),
             "/biometric-service/heartRateZones/v2",
             None,
@@ -314,6 +326,20 @@ def test_requests_send_the_bearer_token_and_log_the_path_without_it(
     assert kwargs["timeout"] == 12
     assert f"GET /sleep-service/sleep/dailySleep?date={END}" in caplog.text
     assert "secret-bearer-token" not in caplog.text
+
+
+def test_sport_filters_are_logged_as_repeated_query_parameters(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = GarminPersonalApiClient("token", session=StubSession(make_response([])))
+
+    with caplog.at_level("INFO", logger="garmin_personal_api.client"):
+        client.get_daily_vo2_max(START, END, sport=["RUNNING", "CYCLING"])
+
+    assert (
+        f"GET /metrics-service/metrics/maxmet/daily/{START}/{END}"
+        "?sport=RUNNING&sport=CYCLING"
+    ) in caplog.text
 
 
 def test_update_bearer_token_is_used_for_subsequent_requests() -> None:
