@@ -167,6 +167,7 @@ gc-personal profile-settings
 gc-personal sleep --date 2026-08-24
 gc-personal steps --start-date 2026-08-20 --end-date 2026-08-24
 gc-personal activities --start 0 --limit 20 --start-date 2026-08-01
+gc-personal activities --activity-type running --activity-sub-type trail_running
 gc-personal activity 123456789
 gc-personal activity-workouts 123456789
 gc-personal activity-download 123456789
@@ -211,6 +212,26 @@ prompts for a destination and confirms before replacing an existing file.
 ## Library usage
 
 The usual flow is to obtain a token, then pass it to the data client.
+
+### Caching activity types
+
+Activity types are reference data that changes infrequently. The library fetches
+them lazily and caches successful responses in memory for **48 hours per client
+instance** by default. Reuse the client across calls to avoid unnecessary requests:
+
+```python
+with GarminPersonalApiClient(
+    token.access_token,
+    activity_types_cache_ttl=48 * 60 * 60,  # seconds; this is the default
+) as client:
+    activity_types = client.get_activity_types()  # fetched from the API
+    same_types = client.get_activity_types()      # served from the cache
+    fresh_types = client.get_activity_types(force_refresh=True)
+```
+
+Set `activity_types_cache_ttl` to another non-negative, finite number of seconds
+to change the lifetime, or `0` to disable reuse. `force_refresh=True`
+bypasses the cached value and replaces it on success, restarting its lifetime.
 
 ### Explicit API key
 
@@ -325,8 +346,8 @@ see [Call an endpoint without a wrapper](#call-an-endpoint-without-a-wrapper).
 | `get_fitness_age(calendar_date)` | `fitness-age` | `GET /fitnessage-service/fitnessage/v2/{calendar_date}` |
 | `get_daily_spo2(calendar_date)` | `spo2` | `GET /wellness-service/wellness/daily/spo2acclimation/{calendar_date}` |
 | `get_wellness_activity_summaries(start_date, end_date)` | `wellness-activity-summaries` | `GET /wellnessactivity-service/activity/summary/range/{start_date}/{end_date}` |
-| `search_activities(*, start=0, limit=20, start_date=None, end_date=None, activity_type=None)` | `activities` | `GET /activitylist-service/activities/search/activities?start={start}&limit={limit}[&startDate={start_date}&endDate={end_date}&activityType={activity_type}]` |
-| `get_activity_types()` | `activity-types` | `GET /activity-service/activity/activityTypes/simple` |
+| `search_activities(*, start=0, limit=20, start_date=None, end_date=None, activity_type=None, activity_sub_type=None)` | `activities` | `GET /activitylist-service/activities/search/activities?start={start}&limit={limit}[&startDate={start_date}&endDate={end_date}&activityType={activity_type}&activitySubType={activity_sub_type}]` |
+| `get_activity_types(*, force_refresh=False)` | `activity-types` | `GET /activity-service/activity/activityTypes/simple` (library results cached for 48 hours by default) |
 | `get_activity(activity_id)` | `activity` | `GET /activity-service/activity/{activity_id}` |
 | `get_activity_workouts(activity_id)` | `activity-workouts` | `GET /activity-service/activity/{activity_id}/workouts` |
 | `download_activity(activity_id)` | `activity-download` | `GET /download-service/files/activity/{activity_id}` (ZIP bytes) |

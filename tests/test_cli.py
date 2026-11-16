@@ -65,7 +65,6 @@ def test_interactive_menu_titles_and_order() -> None:
     )
 
     expected = [
-        ("Activity Types", "activity-types"),
         ("Activities", "activities"),
         ("Daily Stress", "stress"),
         ("Daily Steps", "steps"),
@@ -98,9 +97,9 @@ def test_interactive_menu_titles_and_order() -> None:
         (5, *expected[-1]),
     ) == _INTERACTIVE_MENU_ITEMS
     expected_groups = (
-        ("Activity Data", [1, 2, 23]),
-        ("Health Data", [3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22]),
-        ("Women's Health Data", [19, 20]),
+        ("Activity Data", [1, 22]),
+        ("Health Data", [2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21]),
+        ("Women's Health Data", [18, 19]),
     )
     for (title, commands), (expected_title, numbers) in zip(
         _MENU_CATEGORIES.values(), expected_groups, strict=True
@@ -143,10 +142,9 @@ def test_interactive_root_shows_categories_and_profile_settings() -> None:
 @pytest.mark.parametrize(
     ("category", "option", "dates", "path"),
     [
-        ("1", "1", [], "/activity-service/activity/activityTypes/simple"),
         (
             "1",
-            "3",
+            "2",
             [TODAY, TODAY],
             f"/wellnessactivity-service/activity/summary/range/{TODAY}/{TODAY}",
         ),
@@ -179,10 +177,10 @@ def test_interactive_category_runs_command_and_stays_in_submenu(
 
 
 def test_interactive_activity_browser_returns_to_category() -> None:
-    session = StubSession(make_response([{"activityId": 123, "activityName": "Morning Run"}]))
+    session = _activity_stub()
     output = StringIO()
     errors = StringIO()
-    answers = iter(["1", "2", "1", "b", "b", "b", "q"])
+    answers = iter(["1", "1", "0", "1", "b", "b", "b", "q"])
 
     assert cli.run_interactive(
         GarminPersonalApiClient("token", session=session),
@@ -192,8 +190,9 @@ def test_interactive_activity_browser_returns_to_category() -> None:
         color=False,
     ) == 0
 
-    assert len(session.calls) == 1
-    assert session.calls[0][1].endswith("/activitylist-service/activities/search/activities")
+    assert len(session.calls) == 2
+    assert session.calls[0][1].endswith(_TYPES_PATH)
+    assert session.calls[1][1].endswith(_SEARCH_PATH)
     assert "Morning Run" in output.getvalue()
     assert "activity details" in output.getvalue()
     assert output.getvalue().count("Back to main menu") == 2
@@ -697,12 +696,12 @@ def test_invalid_command_arguments_are_rejected(argv: list[str]) -> None:
     assert raised.value.code == 2
 
 
-def test_activity_types_interactive_command_needs_no_input() -> None:
+def test_activity_types_are_not_available_in_interactive_mode() -> None:
     payload = [{"key": "running"}, {"key": "trail_running", "parent": "running"}]
     session = StubSession(make_response(payload))
     output = StringIO()
     error_output = StringIO()
-    answers = iter(["activity-types", "q"])
+    answers = iter(["1", "activity-types", "b", "q"])
 
     assert (
         cli.run_interactive(
@@ -715,14 +714,387 @@ def test_activity_types_interactive_command_needs_no_input() -> None:
         == 0
     )
 
-    assert json.dumps(payload, indent=2) in output.getvalue()
-    assert error_output.getvalue() == ""
-    [(method, url, kwargs)] = session.calls
-    assert (method, url, kwargs["params"]) == (
-        "GET",
-        f"{DEFAULT_BASE_URL}/activity-service/activity/activityTypes/simple",
-        None,
+    assert "Activity Types" not in output.getvalue()
+    assert "Invalid selection" in error_output.getvalue()
+    assert session.calls == []
+
+
+def test_direct_activity_types_command_always_fetches_fresh_data() -> None:
+    session = StubSession(make_response([{"key": "running"}]))
+    client = GarminPersonalApiClient("token", session=session)
+    client.get_activity_types()
+    session.response = make_response([{"key": "cycling"}])
+    args = cli.build_parser().parse_args(["activity-types"])
+    for _ in range(2):
+        assert cli._execute_command(client, args) == [{"key": "cycling"}]
+    assert len(session.calls) == 3
+
+
+_TYPES_PATH = "/activity-service/activity/activityTypes/simple"
+_SEARCH_PATH = "/activitylist-service/activities/search/activities"
+_ACTIVITY_TYPES = [
+    {"key": "running"},
+    {"key": "trail_running", "parent": "running"},
+    {"key": "cycling"},
+    {"key": "mountain_biking", "parent": "cycling"},
+    {"key": "walking"},
+]
+
+
+def _activity_session(
+    session: StubSession, answers: list[str], *, client: GarminPersonalApiClient | None = None
+) -> tuple[str, str]:
+    output, errors = StringIO(), StringIO()
+    entered = iter(answers)
+    assert (
+        cli.run_interactive(
+            client or GarminPersonalApiClient("token", session=session),
+            input_func=lambda prompt: next(entered),
+            output=output,
+            error_output=errors,
+            color=False,
+        )
+        == 0
     )
+    return output.getvalue(), errors.getvalue()
+
+
+def _activity_stub(types: object = _ACTIVITY_TYPES, activities: object = None) -> StubSession:
+    return StubSession(
+        responses={
+            f"{DEFAULT_BASE_URL}{_TYPES_PATH}": make_response(types),
+            f"{DEFAULT_BASE_URL}{_SEARCH_PATH}": make_response(
+                [{"activityId": 123, "activityName": "Morning Run"}]
+                if activities is None
+                else activities
+            ),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("selection", "filters"),
+    [
+        (["0"], {}),
+        (["1", "0"], {"activityType": "running"}),
+        (["1", "1"], {"activityType": "running", "activitySubType": "trail_running"}),
+    ],
+)
+def test_activity_filters_are_selected_before_first_search(
+    selection: list[str], filters: dict[str, str]
+) -> None:
+    session = _activity_stub()
+    answers = iter(["activities", *selection, "b", "q"])
+    output, errors = StringIO(), StringIO()
+
+    def answer(prompt: str) -> str:
+        if prompt == "\nType: ":
+            assert not any(url.endswith(_SEARCH_PATH) for _, url, _ in session.calls)
+        return next(answers)
+
+    assert cli.run_interactive(
+        GarminPersonalApiClient("token", session=session),
+        input_func=answer,
+        output=output,
+        error_output=errors,
+        color=False,
+    ) == 0
+    assert errors.getvalue() == ""
+    assert [url for _, url, _ in session.calls] == [
+        f"{DEFAULT_BASE_URL}{_TYPES_PATH}",
+        f"{DEFAULT_BASE_URL}{_SEARCH_PATH}",
+    ]
+    assert session.calls[1][2]["params"] == {"start": 0, "limit": 30, **filters}
+
+
+@pytest.mark.parametrize("selection", [["b"], ["1", "b"], ["q"], ["1", "q"]])
+def test_cancel_or_quit_before_first_activity_search(selection: list[str]) -> None:
+    session = _activity_stub()
+    _, errors = _activity_session(session, ["activities", *selection, "q"])
+    assert errors == ""
+    assert len(session.calls) == 1
+    assert session.calls[0][1].endswith(_TYPES_PATH)
+
+
+def test_activity_type_cache_shared_by_browser_visits_and_filters() -> None:
+    session = _activity_stub()
+    output, errors = _activity_session(
+        session,
+        [
+            "activities",
+            "0",
+            "f",
+            "1",
+            "1",  # running / trail_running
+            "f",
+            "2",
+            "0",  # cycling / All subtypes
+            "f",
+            "2",
+            "1",  # cycling / mountain_biking
+            "f",
+            "3",  # walking has no subtypes
+            "f",
+            "0",  # All activities
+            "b",
+            "activities",
+            "0",
+            "b",
+            "q",
+        ],
+    )
+    assert errors == ""
+    assert sum(url.endswith(_TYPES_PATH) for _, url, _ in session.calls) == 1
+    searches = [kwargs["params"] for _, url, kwargs in session.calls if url.endswith(_SEARCH_PATH)]
+    base = {"start": 0, "limit": 30}
+    assert searches == [
+        base,
+        {**base, "activityType": "running", "activitySubType": "trail_running"},
+        {**base, "activityType": "cycling"},
+        {**base, "activityType": "cycling", "activitySubType": "mountain_biking"},
+        {**base, "activityType": "walking"},
+        base,
+        base,
+    ]
+    assert "Filter: running / trail_running" in output
+    assert "Filter: cycling / mountain_biking" in output
+    assert "Filter: All activities" in output
+
+
+def test_activity_type_cache_is_scoped_to_session_even_with_same_client() -> None:
+    session = _activity_stub()
+    client = GarminPersonalApiClient("token", session=session)
+    for _ in range(2):
+        _, errors = _activity_session(
+            session, ["activities", "0", "b", "activities", "0", "b", "q"], client=client
+        )
+        assert errors == ""
+    assert sum(url.endswith(_TYPES_PATH) for _, url, _ in session.calls) == 2
+
+
+@pytest.mark.parametrize("types", [[], _ACTIVITY_TYPES])
+def test_empty_activity_search_keeps_filter_navigation_and_caches_empty_types(
+    types: object,
+) -> None:
+    session = _activity_stub(types=types, activities=[])
+    output, errors = _activity_session(
+        session, ["activities", "0", "f", "0", "f", "0", "b", "q"]
+    )
+    assert errors == ""
+    assert output.count("No activities found.") == 3
+    assert "f  filter by activity type" in output
+    assert sum(url.endswith(_TYPES_PATH) for _, url, _ in session.calls) == 1
+    assert sum(url.endswith(_SEARCH_PATH) for _, url, _ in session.calls) == 3
+
+
+@pytest.mark.parametrize("cancel", [["b"], ["1", "b"]])
+def test_canceling_activity_filter_preserves_page_and_results(cancel: list[str]) -> None:
+    activities = [{"activityId": n, "activityName": f"Run {n}"} for n in range(12)]
+    session = _activity_stub(activities=activities)
+    output, errors = _activity_session(
+        session, ["activities", "0", "n", "f", *cancel, "1", "b", "b", "q"]
+    )
+    assert errors == ""
+    assert '"activityId": 10' in output
+    assert sum(url.endswith(_SEARCH_PATH) for _, url, _ in session.calls) == 1
+
+
+def test_activity_filter_resets_page_and_restricts_subtypes() -> None:
+    from garmin_personal_api.interactive import _choose_activity_filters
+
+    output, errors = StringIO(), StringIO()
+    answers = iter(["99", "1", "2", "1"])
+    assert _choose_activity_filters(
+        _ACTIVITY_TYPES,
+        input_func=lambda prompt: next(answers),
+        output=output,
+        error_output=errors,
+        color=False,
+    ) == ("running", "trail_running")
+    parents, children = output.getvalue().split("Activity subtype | running", maxsplit=1)
+    assert "trail_running" not in parents
+    assert "mountain_biking" not in parents
+    assert "trail_running" in children
+    assert "mountain_biking" not in children
+    assert errors.getvalue().count("Invalid selection") == 2
+
+    session = _activity_stub(
+        activities=[{"activityId": n, "activityName": f"Run {n}"} for n in range(12)]
+    )
+    output, errors_text = _activity_session(
+        session, ["activities", "0", "n", "f", "1", "1", "1", "b", "b", "q"]
+    )
+    assert errors_text == ""
+    assert '"activityId": 0' in output
+
+
+@pytest.mark.parametrize("quit_answers", [["q"], ["1", "q"]])
+def test_quit_from_either_activity_filter_selector(quit_answers: list[str]) -> None:
+    session = _activity_stub()
+    output, errors = _activity_session(session, ["activities", "0", "f", *quit_answers])
+    assert errors == ""
+    assert "Goodbye." in output
+    assert sum(url.endswith(_SEARCH_PATH) for _, url, _ in session.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        ["running"],
+        [{"parent": "running"}],
+        [{"key": "running"}, {"key": "running"}],
+        [{"key": "child", "parent": "missing"}],
+        [{"key": "running", "parent": 42}],
+        [
+            {"key": "running"},
+            {"key": "child", "parent": "running"},
+            {"key": "grandchild", "parent": "child"},
+        ],
+    ],
+)
+def test_activity_filter_reports_malformed_metadata_without_searching(payload: object) -> None:
+    session = _activity_stub(types=payload)
+    _, errors = _activity_session(session, ["activities", "q"])
+    assert "Error: Activity types" in errors
+    assert sum(url.endswith(_SEARCH_PATH) for _, url, _ in session.calls) == 0
+
+
+@pytest.mark.parametrize("failure", ["types", "search"])
+def test_activity_filter_failure_preserves_state_and_allows_retry(
+    failure: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = _activity_stub()
+    original = session._response_for
+    failed = False
+    search_count = 0
+
+    def response_for(url: str) -> Any:
+        nonlocal failed, search_count
+        if url.endswith(_SEARCH_PATH):
+            search_count += 1
+        should_fail = (
+            url.endswith(_TYPES_PATH)
+            if failure == "types"
+            else url.endswith(_SEARCH_PATH) and search_count == 3
+        )
+        if should_fail and not failed:
+            failed = True
+            return make_response({"error": "failed"}, status_code=500)
+        return original(url)
+
+    monkeypatch.setattr(session, "_response_for", response_for)
+    if failure == "types":
+        answers = ["activities", "activities", "1", "1", "b", "q"]
+    else:
+        answers = [
+            "activities",
+            "0",
+            "f",
+            "1",
+            "1",
+            "f",
+            "2",
+            "1",  # second filter fails
+            "1",
+            "b",
+            "f",
+            "2",
+            "1",
+            "b",
+            "q",
+        ]
+    output, errors = _activity_session(session, answers)
+    assert errors.count("HTTP 500") == 1
+    assert "Morning Run" in output
+    if failure == "search":
+        assert output.count("Filter: running / trail_running") == 3
+        assert '"activityId": 123' in output
+        assert "Filter: cycling / mountain_biking" in output
+    assert sum(url.endswith(_TYPES_PATH) for _, url, _ in session.calls) == (
+        2 if failure == "types" else 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("parent", "child"),
+    [("running", "trail_running"), ("running", "mountain_biking"), (None, "unknown"), ("", "")],
+)
+def test_activity_subtype_cli_and_library_forward_without_validation_or_cache(
+    parent: str | None, child: str
+) -> None:
+    session = StubSession(make_response([]))
+    client = GarminPersonalApiClient("token", session=session)
+    argv = ["activities", "--activity-sub-type", child]
+    if parent is not None:
+        argv += ["--activity-type", parent]
+    for _ in range(2):
+        cli._execute_command(client, cli.build_parser().parse_args(argv))
+        client.search_activities(activity_type=parent, activity_sub_type=child)
+    assert len(session.calls) == 4
+    expected: dict[str, str | int] = {"start": 0, "limit": 20, "activitySubType": child}
+    if parent is not None:
+        expected["activityType"] = parent
+    for _, url, kwargs in session.calls:
+        assert url.endswith(_SEARCH_PATH)
+        assert kwargs["params"] == expected
+
+
+def test_activity_subtype_api_errors_are_not_locally_rejected() -> None:
+    session = StubSession(make_response({"error": "invalid pair"}, status_code=400))
+    client = GarminPersonalApiClient("token", session=session)
+    with pytest.raises(HttpError):
+        cli._execute_command(
+            client,
+            cli.build_parser().parse_args(["activities", "--activity-sub-type", "unknown"]),
+        )
+    assert len(session.calls) == 1
+    assert session.calls[0][2]["params"]["activitySubType"] == "unknown"
+
+
+def test_activity_type_cache_survives_category_navigation_and_token_refresh() -> None:
+    session = _activity_stub()
+    output, errors = StringIO(), StringIO()
+    answers = iter(["1", "1", "0", "b", "b", "5", "1", "1", "0", "b", "b", "q"])
+    refreshes: list[bool] = []
+    assert (
+        cli.run_interactive(
+            GarminPersonalApiClient("token", session=session),
+            input_func=lambda prompt: next(answers),
+            output=output,
+            error_output=errors,
+            color=False,
+            refresh_token=lambda: refreshes.append(True),
+        )
+        == 0
+    )
+    assert errors.getvalue() == ""
+    assert refreshes == [True]
+    assert sum(url.endswith(_TYPES_PATH) for _, url, _ in session.calls) == 1
+    assert len(session.calls) == 3
+    assert output.getvalue().count("GET ") == 3
+
+
+def test_activity_type_lookup_retries_failed_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _activity_stub()
+    original = session._response_for
+    responses = iter(
+        [
+            make_response({"error": "failed"}, status_code=500),
+            make_response([]),
+        ]
+    )
+    monkeypatch.setattr(
+        session, "_response_for",
+        lambda url: next(responses) if url.endswith(_TYPES_PATH) else original(url),
+    )
+    output, errors = _activity_session(
+        session, ["activities", "activities", "0", "b", "activities", "0", "b", "q"]
+    )
+    assert errors.count("HTTP 500") == 1
+    assert sum(url.endswith(_TYPES_PATH) for _, url, _ in session.calls) == 2
+    assert output.count("GET ") == 4
 
 
 def test_activity_commands_are_excluded_from_the_interactive_menu() -> None:

@@ -17,9 +17,12 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from datetime import date
+from time import monotonic
 from typing import Any
 from urllib.parse import urlencode
 
@@ -45,12 +48,20 @@ class GarminPersonalApiClient:
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         session: requests.Session | None = None,
+        activity_types_cache_ttl: float = 48 * 60 * 60,
     ) -> None:
         if timeout <= 0:
             raise GarminPersonalApiError("timeout must be greater than zero")
+        if not math.isfinite(activity_types_cache_ttl) or activity_types_cache_ttl < 0:
+            raise GarminPersonalApiError(
+                "activity_types_cache_ttl must be a finite, non-negative number of seconds"
+            )
         self.base_url = os.environ.get(BASE_URL_ENV_VAR, DEFAULT_BASE_URL).rstrip("/")
         self.timeout = timeout
         self._session = session or requests.Session()
+        self._activity_types_cache_ttl = activity_types_cache_ttl
+        self._activity_types_cache: JsonValue = None
+        self._activity_types_cache_expires_at: float | None = None
         self.update_bearer_token(bearer_token)
 
     def close(self) -> None:
@@ -228,9 +239,24 @@ class GarminPersonalApiClient:
             f"/wellnessactivity-service/activity/summary/range/{_iso(start_date)}/{_iso(end_date)}"
         )
 
-    def get_activity_types(self) -> JsonValue:
-        """Return activity types with a key and optional parent."""
-        return self.get("/activity-service/activity/activityTypes/simple")
+    def get_activity_types(self, *, force_refresh: bool = False) -> JsonValue:
+        """Return activity types, cached in memory per client for 48 hours by default.
+
+        Configure activity_types_cache_ttl in seconds on the client (0 disables
+        caching). force_refresh bypasses the cached value and replaces it on
+        success. Failed requests propagate without extending the cache lifetime.
+        Returned data is copied so callers cannot mutate the cached response.
+        """
+        if (
+            not force_refresh
+            and self._activity_types_cache_expires_at is not None
+            and monotonic() < self._activity_types_cache_expires_at
+        ):
+            return deepcopy(self._activity_types_cache)
+        value = self.get("/activity-service/activity/activityTypes/simple")
+        self._activity_types_cache = deepcopy(value)
+        self._activity_types_cache_expires_at = monotonic() + self._activity_types_cache_ttl
+        return value
 
     def search_activities(
         self,
@@ -240,11 +266,13 @@ class GarminPersonalApiClient:
         start_date: str | date | None = None,
         end_date: str | date | None = None,
         activity_type: str | None = None,
+        activity_sub_type: str | None = None,
     ) -> JsonValue:
         """Return summarized activities matching the supplied search filters.
 
-        Use get_activity_types() to discover available activity_type keys. 
-        Only parent activity types are valid for filtering.
+        Use get_activity_types() to discover parent activity_type keys and their
+        child activity_sub_type keys. Filters are forwarded without local
+        validation; the API validates their values and relationship.
         """
         params: dict[str, str | int] = {"start": start, "limit": limit}
         if start_date is not None:
@@ -253,6 +281,8 @@ class GarminPersonalApiClient:
             params["endDate"] = _iso(end_date)
         if activity_type is not None:
             params["activityType"] = activity_type
+        if activity_sub_type is not None:
+            params["activitySubType"] = activity_sub_type
         return self.get("/activitylist-service/activities/search/activities", params=params)
 
     def get_activity(self, activity_id: int | str) -> JsonValue:
