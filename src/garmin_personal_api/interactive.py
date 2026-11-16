@@ -307,7 +307,8 @@ def _run_interactive_command(
         date_state.last_end_date = end_date
         if spec.command == "vo2-max":
             requested_sports = input_func(
-                "Sport filters (comma-separated, leave blank for all): "
+                "Sport filters (comma-separated, "
+                "e.g. GENERIC,CYCLING,ROWING - or leave blank for all): "
             ).strip()
             sports = [sport.strip() for sport in requested_sports.split(",") if sport.strip()]
             return _run_interactive_operation(

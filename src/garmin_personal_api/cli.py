@@ -158,7 +158,7 @@ def _add_command_arguments(
                 "--sport",
                 action="append",
                 metavar="SPORT",
-                help="Optional sport filter; repeat to include multiple sports. " \
+                help="Optional sport filter; repeat to include multiple sports. "
                 "Available sport types are those found in the Garmin FIT SDK.",
             )
     elif spec.input_kind == "activities":
@@ -188,8 +188,8 @@ def _add_command_arguments(
         parser.add_argument(
             "--activity-type",
             metavar="TYPE",
-            help="Optional activity type filter. " \
-            "Available types can be discovered using the 'activity-types' command. " \
+            help="Optional activity type filter. "
+            "Available types can be discovered using the 'activity-types' command. "
             "Only parent activity types are valid.",
         )
         parser.add_argument(
