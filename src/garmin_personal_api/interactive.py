@@ -308,7 +308,7 @@ def _run_interactive_command(
         if spec.command == "vo2-max":
             requested_sports = input_func(
                 "Sport filters (comma-separated, "
-                "e.g. GENERIC,CYCLING,ROWING - or leave blank for all): "
+                "e.g. RUNNING,CYCLING,ROWING - or leave blank for all): "
             ).strip()
             sports = [sport.strip() for sport in requested_sports.split(",") if sport.strip()]
             return _run_interactive_operation(
