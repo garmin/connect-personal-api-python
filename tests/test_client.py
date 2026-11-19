@@ -238,9 +238,16 @@ EndpointCall = Callable[[GarminPersonalApiClient], Any]
                 start_date=START,
                 end_date=date(2026, 8, 24),
                 activity_type="running",
+                activity_sub_type="trail_running",
             ),
             "/activitylist-service/activities/search/activities",
-            {"start": 5, "limit": 10, **RANGE, "activityType": "running"},
+            {
+                "start": 5,
+                "limit": 10,
+                **RANGE,
+                "activityType": "running",
+                "activitySubType": "trail_running",
+            },
             id="activities-filters",
         ),
         pytest.param(
@@ -281,6 +288,125 @@ def test_activity_types_preserve_response(payload: list[dict[str, str]]) -> None
 
     assert client.get_activity_types() == payload
     assert len(session.calls) == 1
+
+
+@pytest.mark.parametrize("payload", [[], [{"key": "running"}], None])
+def test_activity_types_cache_successful_responses(payload: Any) -> None:
+    session = StubSession(make_response(payload))
+    client = GarminPersonalApiClient("token", session=session)
+    for _ in range(3):
+        assert client.get_activity_types() == payload
+    assert len(session.calls) == 1
+
+
+@pytest.mark.parametrize("ttl", [48 * 60 * 60, 60])
+def test_activity_types_cache_expires_at_exact_ttl(
+    ttl: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 100.0
+    monkeypatch.setattr("garmin_personal_api.client.monotonic", lambda: now)
+    session = StubSession(make_response([{"key": "running"}]))
+    client = (
+        GarminPersonalApiClient("token", session=session)
+        if ttl == 48 * 60 * 60
+        else GarminPersonalApiClient("token", session=session, activity_types_cache_ttl=ttl)
+    )
+    assert client.get_activity_types() == [{"key": "running"}]
+    session.response = make_response([{"key": "cycling"}])
+    now += ttl - 0.001
+    assert client.get_activity_types() == [{"key": "running"}]
+    assert len(session.calls) == 1
+    now = 100.0 + ttl
+    assert client.get_activity_types() == [{"key": "cycling"}]
+    assert len(session.calls) == 2
+    assert client.get_activity_types() == [{"key": "cycling"}]
+    assert len(session.calls) == 2
+
+
+def test_activity_types_force_refresh_replaces_cache_and_resets_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 0.0
+    monkeypatch.setattr("garmin_personal_api.client.monotonic", lambda: now)
+    session = StubSession(make_response([{"key": "running"}]))
+    client = GarminPersonalApiClient("token", session=session, activity_types_cache_ttl=60)
+    client.get_activity_types()
+    now = 30.0
+    session.response = make_response([])
+    assert client.get_activity_types(force_refresh=True) == []
+    now = 60.0
+    assert client.get_activity_types() == []
+    assert len(session.calls) == 2
+    now = 90.0
+    client.get_activity_types()
+    assert len(session.calls) == 3
+
+
+@pytest.mark.parametrize("failure", ["initial", "expired", "forced"])
+def test_activity_types_cache_does_not_hide_or_cache_failures(
+    failure: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 0.0
+    monkeypatch.setattr("garmin_personal_api.client.monotonic", lambda: now)
+    session = StubSession(make_response([{"key": "running"}]))
+    client = GarminPersonalApiClient("token", session=session, activity_types_cache_ttl=60)
+    if failure != "initial":
+        client.get_activity_types()
+    if failure == "expired":
+        now = 60.0
+    session.response = make_response({"error": "failed"}, status_code=500)
+    with pytest.raises(HttpError):
+        client.get_activity_types(force_refresh=failure == "forced")
+    if failure == "forced":
+        assert client.get_activity_types() == [{"key": "running"}]
+        now = 60.0
+        with pytest.raises(HttpError):
+            client.get_activity_types()
+    session.response = make_response([])
+    assert client.get_activity_types() == []
+    calls = len(session.calls)
+    assert client.get_activity_types() == []
+    assert len(session.calls) == calls
+
+
+def test_activity_types_cache_returns_independent_nested_copies() -> None:
+    session = StubSession(make_response([{"key": "running", "metadata": {"label": "Run"}}]))
+    client = GarminPersonalApiClient("token", session=session)
+    first = client.get_activity_types()
+    assert isinstance(first, list)
+    first[0]["metadata"]["label"] = "Changed"
+    first.append({"key": "cycling"})
+    second = client.get_activity_types()
+    assert second == [{"key": "running", "metadata": {"label": "Run"}}]
+    assert isinstance(second, list)
+    second[0]["metadata"]["label"] = "Also changed"
+    assert client.get_activity_types() == [{"key": "running", "metadata": {"label": "Run"}}]
+    assert len(session.calls) == 1
+
+
+def test_activity_types_cache_is_per_client() -> None:
+    session = StubSession(make_response([]))
+    clients = [GarminPersonalApiClient("token", session=session) for _ in range(2)]
+    for client in clients:
+        client.get_activity_types()
+        client.get_activity_types()
+    assert len(session.calls) == 2
+
+
+def test_activity_types_zero_ttl_disables_cache() -> None:
+    session = StubSession(make_response([]))
+    client = GarminPersonalApiClient("token", session=session, activity_types_cache_ttl=0)
+    for _ in range(3):
+        client.get_activity_types()
+    assert len(session.calls) == 3
+
+
+@pytest.mark.parametrize("ttl", [-1, float("inf"), float("-inf"), float("nan")])
+def test_activity_types_cache_rejects_invalid_ttl(ttl: float) -> None:
+    session = StubSession()
+    with pytest.raises(GarminPersonalApiError, match="activity_types_cache_ttl"):
+        GarminPersonalApiClient("token", session=session, activity_types_cache_ttl=ttl)
+    assert session.calls == []
 
 
 def test_single_day_summaries_preserve_collection_response() -> None:

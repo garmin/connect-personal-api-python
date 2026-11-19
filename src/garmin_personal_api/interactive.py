@@ -29,19 +29,23 @@ from typing import Any, TextIO
 
 import requests
 
-from .client import GarminPersonalApiClient
+from .client import GarminPersonalApiClient, JsonValue
 from .commands import COMMANDS, TOKEN_REFRESH_COMMAND, CommandSpec
 from .downloads import save_download
 from .errors import GarminPersonalApiError
 
 _ACTIVITY_PAGE_SIZE = 10
 # Activity commands need an activity ID, so they are reached from the activity browser.
-_MENU_COMMANDS = tuple(spec for spec in COMMANDS if spec.input_kind != "activity")
+_MENU_COMMANDS = tuple(
+    spec
+    for spec in COMMANDS
+    if spec.input_kind != "activity" and spec.command != "activity-types"
+)
 _MENU_COMMANDS_BY_NAME = {spec.command: spec for spec in _MENU_COMMANDS}
 _MENU_CATEGORIES = {
     "activity-data": (
         "Activity Data",
-        ("activity-types", "activities", "wellness-activity-summaries"),
+        ("activities", "wellness-activity-summaries"),
     ),
     "health-data": (
         "Health Data",
@@ -92,6 +96,18 @@ class _InteractiveDateState:
     last_end_date: str
 
 
+@dataclass
+class _ActivityTypeCache:
+    loaded: bool = False
+    value: JsonValue = None
+
+    def get(self, client: GarminPersonalApiClient) -> JsonValue:
+        if not self.loaded:
+            self.value = client.get_activity_types(force_refresh=True)
+            self.loaded = True
+        return self.value
+
+
 class _InteractiveBack(Exception):
     """Return from the current interactive screen."""
 
@@ -138,6 +154,7 @@ def _run_interactive_session(
 ) -> int:
     today = date.today().isoformat()
     date_state = _InteractiveDateState(last_date=today, last_end_date=today)
+    activity_types = _ActivityTypeCache()
     category: str | None = None
 
     if show_header:
@@ -195,6 +212,7 @@ def _run_interactive_session(
             if spec.input_kind == "activities":
                 _browse_activities(
                     client,
+                    activity_types=activity_types,
                     input_func=input_func,
                     output=actual_output,
                     error_output=actual_error_output,
@@ -289,7 +307,8 @@ def _run_interactive_command(
         date_state.last_end_date = end_date
         if spec.command == "vo2-max":
             requested_sports = input_func(
-                "Sport filters (comma-separated, leave blank for all): "
+                "Sport filters (comma-separated, "
+                "e.g. RUNNING,CYCLING,ROWING - or leave blank for all): "
             ).strip()
             sports = [sport.strip() for sport in requested_sports.split(",") if sport.strip()]
             return _run_interactive_operation(
@@ -308,33 +327,124 @@ def _run_interactive_command(
     return _run_interactive_operation(method, heading=spec.label, output=output, color=color)
 
 
+def _select_activity_type(
+    choices: list[str],
+    *,
+    title: str,
+    all_label: str,
+    input_func: Callable[[str], str],
+    output: TextIO,
+    error_output: TextIO,
+    color: bool | None,
+) -> str | None:
+    from rich.table import Table
+
+    print_heading(title, output=output, width=56, color=color)
+    table = Table(box=None, show_header=False, pad_edge=False)
+    table.add_column("Selection")
+    for number, label in enumerate([all_label, *choices]):
+        table.add_row(f"{number:<2} {label}")
+    _interactive_console(output=output, color=color).print(table)
+    _print_navigation_line(["b  cancel", "q  quit"], output=output, color=color)
+    while True:
+        choice = input_func("\nType: ").strip().lower()
+        if choice in {"b", "back"}:
+            raise _InteractiveBack
+        if choice in {"q", "quit", "exit"}:
+            raise _InteractiveExit
+        if choice.isascii() and choice.isdecimal() and 0 <= int(choice) <= len(choices):
+            return choices[int(choice) - 1] if int(choice) else None
+        print(f"Invalid selection. Choose 0 through {len(choices)}, b, or q.", file=error_output)
+
+
+def _choose_activity_filters(
+    value: JsonValue,
+    *,
+    input_func: Callable[[str], str],
+    output: TextIO,
+    error_output: TextIO,
+    color: bool | None,
+) -> tuple[str | None, str | None]:
+    if not isinstance(value, list):
+        raise GarminPersonalApiError("Activity types response must be a list.")
+    types: dict[str, str | None] = {}
+    for record in value:
+        if not isinstance(record, dict):
+            raise GarminPersonalApiError("Activity types must contain objects with a key.")
+        key, parent = record.get("key"), record.get("parent")
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or key in types
+            or (parent is not None and not isinstance(parent, str))
+        ):
+            raise GarminPersonalApiError("Activity types contain an invalid key or parent.")
+        types[key] = parent or None
+    if any(parent and (parent not in types or types[parent]) for parent in types.values()):
+        raise GarminPersonalApiError("Activity types contain an invalid parent relationship.")
+    select = partial(
+        _select_activity_type,
+        input_func=input_func,
+        output=output,
+        error_output=error_output,
+        color=color,
+    )
+    parent = select(
+        [key for key, parent in types.items() if parent is None],
+        title="Activity type",
+        all_label="All activities",
+    )
+    children = [key for key, candidate in types.items() if candidate == parent]
+    if parent is None or not children:
+        return parent, None
+    child = select(children, title=f"Activity subtype | {parent}", all_label="All subtypes")
+    return parent, child
+
+
 def _browse_activities(
     client: GarminPersonalApiClient,
     *,
+    activity_types: _ActivityTypeCache,
     input_func: Callable[[str], str],
     output: TextIO,
     error_output: TextIO,
     color: bool | None,
 ) -> None:
     print_heading("Activities", output=output, width=56, color=color)
-    activities = _activity_records(client.search_activities(limit=30))
-    if not activities:
-        print("No activities found.", file=output)
-        return
-
+    activity_type, activity_sub_type = _choose_activity_filters(
+        activity_types.get(client),
+        input_func=input_func,
+        output=output,
+        error_output=error_output,
+        color=color,
+    )
+    activities = _activity_records(
+        client.search_activities(
+            limit=30, activity_type=activity_type, activity_sub_type=activity_sub_type
+        )
+    )
     page = 0
     while True:
+        print(
+            f"Filter: {activity_type or 'All activities'}"
+            + (f" / {activity_sub_type}" if activity_sub_type else ""),
+            file=output,
+        )
+        if not activities:
+            print("No activities found.", file=output)
         page_start = page * _ACTIVITY_PAGE_SIZE
         page_end = min(page_start + _ACTIVITY_PAGE_SIZE, len(activities))
         page_activities = activities[page_start:page_end]
-        _print_activity_table(
-            page_activities,
-            page_start=page_start,
-            total=len(activities),
-            output=output,
-            color=color,
-        )
-        navigation = ["number  view activity", "b  back"]
+        if activities:
+            _print_activity_table(
+                page_activities,
+                page_start=page_start,
+                total=len(activities),
+                output=output,
+                color=color,
+            )
+        navigation = ["number  view activity"] if activities else []
+        navigation.extend(["f  filter by activity type", "b  back"])
         if page > 0:
             navigation.append("p  previous page")
         if page_end < len(activities):
@@ -350,6 +460,29 @@ def _browse_activities(
             if choice in {"q", "quit", "exit"}:
                 raise _InteractiveExit
             return
+        if choice in {"f", "filter"}:
+            try:
+                parent, child = _choose_activity_filters(
+                    activity_types.get(client),
+                    input_func=input_func,
+                    output=output,
+                    error_output=error_output,
+                    color=color,
+                )
+                filtered = _activity_records(
+                    client.search_activities(
+                        limit=30, activity_type=parent, activity_sub_type=child
+                    )
+                )
+            except _InteractiveBack:
+                continue
+            except (GarminPersonalApiError, requests.RequestException) as exc:
+                print(f"Error: {exc}", file=error_output)
+                continue
+            activities = filtered
+            activity_type, activity_sub_type = parent, child
+            page = 0
+            continue
         if choice in {"n", "next"}:
             if page_end < len(activities):
                 page += 1
@@ -366,7 +499,7 @@ def _browse_activities(
             activity_index = page_start + int(choice) - 1
         except ValueError:
             print(
-                "Invalid selection. Choose an activity number, n, p, b, or q.",
+                "Invalid selection. Choose an activity number, f, n, p, b, or q.",
                 file=error_output,
             )
             continue

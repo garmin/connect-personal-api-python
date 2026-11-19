@@ -158,7 +158,7 @@ def _add_command_arguments(
                 "--sport",
                 action="append",
                 metavar="SPORT",
-                help="Optional sport filter; repeat to include multiple sports. " \
+                help="Optional sport filter; repeat to include multiple sports. "
                 "Available sport types are those found in the Garmin FIT SDK.",
             )
     elif spec.input_kind == "activities":
@@ -188,9 +188,15 @@ def _add_command_arguments(
         parser.add_argument(
             "--activity-type",
             metavar="TYPE",
-            help="Optional activity type filter. " \
-            "Available types can be discovered using the 'activity-types' command. " \
+            help="Optional activity type filter. "
+            "Available types can be discovered using the 'activity-types' command. "
             "Only parent activity types are valid.",
+        )
+        parser.add_argument(
+            "--activity-sub-type",
+            metavar="TYPE",
+            help="Optional child activity type filter. Forwarded without local validation; "
+            "the API validates its relationship to --activity-type.",
         )
     elif spec.input_kind == "activity":
         parser.add_argument(
@@ -294,6 +300,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _execute_command(client: GarminPersonalApiClient, args: argparse.Namespace) -> Any:
     spec = COMMANDS_BY_NAME[args.command]
     method = partial(spec.method, client)
+    if spec.command == "activity-types":
+        return method(force_refresh=True)
     if spec.input_kind == "date":
         return method(args.date)
     if spec.input_kind == "date_with_today":
@@ -311,6 +319,7 @@ def _execute_command(client: GarminPersonalApiClient, args: argparse.Namespace) 
             start_date=args.start_date,
             end_date=args.end_date,
             activity_type=args.activity_type,
+            activity_sub_type=args.activity_sub_type,
         )
     if spec.input_kind == "activity":
         return method(args.activity_id)
