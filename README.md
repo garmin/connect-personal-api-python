@@ -388,6 +388,9 @@ exceptions.
 
 ## Development
 
+Install the development dependencies as described in [Install from source](#install-from-source).
+With your virtual environment activated, run these checks from the repository root:
+
 ```shell
 ruff check .
 pyright

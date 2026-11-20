@@ -65,7 +65,5 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 include = ["src", "examples"]
 exclude = ["build", "dist", ".venv"]
 pythonVersion = "3.12"
-venvPath = "."
-venv = ".venv"
 typeCheckingMode = "standard"
 reportMissingModuleSource = "none"
